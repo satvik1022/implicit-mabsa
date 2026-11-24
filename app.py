@@ -8,7 +8,7 @@ from typing import Any, Dict
 import torch
 import torch.nn.functional as F
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from PIL import Image
 
 from dataset import (
@@ -37,7 +37,7 @@ STATE: Dict[str, Any] = {}
 def load_models() -> None:
     if not CHECKPOINT_PATH.is_file():
         hf_hub_download(
-            repo_id="imdb",
+            repo_id="Garv3883/implicit-mabsa-weights",
             filename="implicit_mabsa.pt",
             local_dir="saved_models/"
         )   
@@ -152,65 +152,143 @@ def demo_ui() -> str:
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ImplicitMABSA — Live Multimodal Sentiment Demo</title>
+  <meta name="theme-color" content="#f8f7f3" />
+  <title>ImplicitMABSA — Multimodal sentiment studio</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 820px; margin: 40px auto; padding: 0 20px; background: #0f172a; color: #f8fafc; }
-    h1 { font-size: 1.6rem; margin-bottom: 6px; }
-    p.sub { color: #94a3b8; margin-top: 0; margin-bottom: 24px; }
-    .card { background: #1e293b; padding: 22px; border-radius: 12px; border: 1px solid #334155; margin-bottom: 20px; }
-    label { display: block; font-weight: 600; margin-bottom: 6px; color: #cbd5e1; }
-    input[type="text"], textarea, input[type="file"] {
-      width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 8px;
-      border: 1px solid #475569; background: #0f172a; color: #f8fafc; margin-bottom: 16px; font-size: 0.95rem;
-    }
-    button {
-      background: #3b82f6; color: white; border: none; padding: 12px 20px; border-radius: 8px;
-      font-weight: 600; font-size: 1rem; cursor: pointer; width: 100%;
-    }
-    button:hover { background: #2563eb; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-top: 16px; }
-    .stream-box { background: #0f172a; padding: 16px; border-radius: 10px; border: 1px solid #334155; }
-    .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; }
-    .positive { background: #065f46; color: #6ee7b7; }
-    .neutral { background: #78350f; color: #fcd34d; }
-    .negative { background: #7f1d1d; color: #fca5a5; }
-    .meta { font-size: 0.85rem; color: #94a3b8; margin-top: 8px; line-height: 1.5; }
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
+    :root { color-scheme: light; --ink:#20241f; --muted:#777b72; --line:#e7e7df; --paper:#fff; --bg:#f8f7f3; --green:#315c43; --lime:#d8ef9a; --orange:#e8784e; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font-family:'DM Sans',sans-serif; -webkit-font-smoothing:antialiased; }
+    .topbar { height:70px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; padding:0 max(28px,calc((100% - 1160px)/2)); background:rgba(248,247,243,.9); }
+    .brand { display:flex; align-items:center; gap:11px; font-family:Manrope,sans-serif; font-weight:800; letter-spacing:-.5px; }
+    .logo { width:34px;height:34px;border-radius:11px;background:var(--green);color:#fff;display:grid;place-items:center;font-size:18px; }
+    .top-tag { color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px; }
+    .dot { width:8px;height:8px;border-radius:50%;background:#63a779;box-shadow:0 0 0 3px #63a77922; }
+    main { max-width:1160px;margin:0 auto;padding:57px 28px 70px; }
+    .intro { display:flex;justify-content:space-between;align-items:end;margin-bottom:30px;gap:24px; }
+    .eyebrow { text-transform:uppercase;letter-spacing:1.8px;font-size:11px;font-weight:700;color:var(--green);margin:0 0 13px; }
+    h1,h2,h3,p { margin-top:0; }
+    h1 { font:800 clamp(34px,5vw,53px)/1.08 Manrope,sans-serif;letter-spacing:-2.2px;margin:0 0 13px; }
+    .intro p:last-child { color:var(--muted);font-size:16px;margin:0; }
+    .model-pill { background:#eef1e9;border:1px solid #dfe5d8;color:var(--green);border-radius:999px;padding:10px 14px;font-size:12px;font-weight:700;white-space:nowrap; }
+    .workspace { display:grid;grid-template-columns:minmax(0,1.05fr) minmax(340px,.95fr);gap:20px;align-items:start; }
+    .panel { background:var(--paper);border:1px solid var(--line);border-radius:18px;box-shadow:0 8px 30px #29342408; }
+    .form-panel { padding:27px; }
+    .panel-heading { display:flex;align-items:center;gap:12px;margin-bottom:23px; }
+    .step { width:29px;height:29px;border-radius:9px;background:#edf2e9;color:var(--green);display:grid;place-items:center;font-weight:800;font-size:13px; }
+    .panel-heading h2 { font:700 17px Manrope,sans-serif;margin:0;letter-spacing:-.3px; }
+    label { display:block;font-size:13px;font-weight:700;margin-bottom:8px; }
+    .field { margin-bottom:19px; }
+    textarea,input[type=text] { width:100%;border:1px solid #dedfd8;border-radius:10px;background:#fff;padding:13px 14px;color:var(--ink);font:14px 'DM Sans',sans-serif;outline:none;transition:.18s; }
+    textarea { min-height:105px;resize:vertical;line-height:1.55; }
+    textarea:focus,input[type=text]:focus { border-color:#78947f;box-shadow:0 0 0 3px #315c4315; }
+    .hint { color:#92958d;font-size:11px;margin:7px 0 0; }
+    .aspect-wrap { position:relative; }
+    .aspect-wrap input { padding-right:70px; }
+    .aspect-wrap span { position:absolute;right:12px;top:13px;color:#999c94;font-size:11px; }
+    .upload { height:128px;border:1.5px dashed #cdd3c9;border-radius:12px;background:#fafbf8;display:flex;align-items:center;justify-content:center;cursor:pointer;text-align:center;transition:.18s;overflow:hidden;position:relative; }
+    .upload:hover,.upload.drag { border-color:var(--green);background:#f3f7ef; }
+    .upload input { position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%; }
+    .upload-copy { pointer-events:none; }
+    .upload-icon { font-size:23px;margin-bottom:5px; }
+    .upload-title { font-size:13px;font-weight:700; }
+    .upload-sub { font-size:11px;color:#92958d;margin-top:4px; }
+    .preview { display:none;max-width:100%;max-height:128px;object-fit:contain; }
+    .upload.has-image .upload-copy { display:none; }
+    .upload.has-image .preview { display:block; }
+    .actions { display:flex;gap:10px;align-items:center;margin-top:22px; }
+    button { border:0;cursor:pointer;font:700 13px 'DM Sans',sans-serif; }
+    .primary { flex:1;background:var(--green);color:#fff;padding:14px 18px;border-radius:10px;transition:.18s; }
+    .primary:hover { background:#244a34;transform:translateY(-1px); }
+    .primary:disabled { opacity:.65;cursor:wait;transform:none; }
+    .sample { background:transparent;color:var(--green);padding:12px 8px;font-size:12px;white-space:nowrap; }
+    .right-col { display:grid;gap:20px; }
+    .guide { padding:25px 27px;background:#eef2e9;border:1px solid #e1e7db;border-radius:18px; }
+    .guide h2 { font:700 16px Manrope,sans-serif;margin-bottom:7px; }
+    .guide > p { font-size:12px;color:#737a70;line-height:1.6;margin-bottom:18px; }
+    .stream-list { display:grid;gap:11px; }
+    .stream { display:flex;gap:12px;align-items:center; }
+    .stream-icon { width:31px;height:31px;border-radius:10px;background:#fff;display:grid;place-items:center;font-size:14px; }
+    .stream strong { font-size:12px;display:block; }
+    .stream small { color:#858b80;font-size:11px; }
+    .results { padding:25px 27px;display:none; }
+    .results-head { display:flex;justify-content:space-between;align-items:center;margin-bottom:16px; }
+    .results-head h2 { font:700 16px Manrope,sans-serif;margin:0; }
+    .device { font-size:10px;color:var(--muted);background:#f4f4ef;border-radius:999px;padding:6px 9px; }
+    .grid { display:grid;gap:10px; }
+    .stream-box { border:1px solid var(--line);border-radius:12px;padding:15px; }
+    .result-top { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px; }
+    .stream-name { font-size:12px;font-weight:700; }
+    .badge { padding:6px 10px;border-radius:999px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.35px; }
+    .positive { background:#e6f4e9;color:#347448; }
+    .neutral { background:#fff2d8;color:#936414; }
+    .negative { background:#fce8e3;color:#b64c34; }
+    .bar-label { display:flex;justify-content:space-between;color:#777b72;font-size:10px;margin-bottom:6px; }
+    .bar { height:5px;border-radius:9px;background:#efefe9;overflow:hidden; }
+    .bar i { display:block;height:100%;border-radius:9px;background:var(--green); }
+    .meta { display:flex;justify-content:space-between;gap:10px;margin-top:10px;color:#858980;font-size:10px; }
+    .error { color:#b64c34;font-size:12px;margin:12px 0 0;display:none; }
+    footer { text-align:center;color:#999c94;font-size:11px;margin-top:30px; }
+    @media(max-width:780px) { main{padding-top:38px}.workspace{grid-template-columns:1fr}.intro{align-items:start;flex-direction:column}.model-pill{display:none}.right-col{grid-row:auto} }
+    @media(max-width:480px) { .topbar{padding:0 18px}.top-tag{font-size:11px}main{padding:30px 16px 45px}.form-panel,.guide,.results{padding:21px}.actions{align-items:stretch;flex-direction:column-reverse}.sample{padding:8px}.intro p:last-child{font-size:14px} }
   </style>
 </head>
 <body>
-  <h1>ImplicitMABSA Live Inference</h1>
-  <p class="sub">Compare Text-Only (DeBERTa-v3), Image-Only (ViT), and Cross-Modal Fusion live.</p>
-
-  <div class="card">
-    <form id="predictForm">
-      <label for="text">Tweet / Post Text</label>
-      <textarea id="text" name="text" rows="3" placeholder="e.g., Well, that happened after two hours of use..." required></textarea>
-
-      <label for="aspect">Target / Candidate Aspect</label>
-      <input type="text" id="aspect" name="aspect" placeholder="e.g., battery, screen, food, camera" required />
-
-      <label for="image">Accompanying Image</label>
-      <input type="file" id="image" name="image" accept="image/*" required />
-
-      <button type="submit" id="submitBtn">Analyze Multimodal Sentiment</button>
-    </form>
-  </div>
-
-  <div id="output" style="display:none;" class="card">
-    <h3 style="margin-top:0;">Stream-by-Stream Comparison</h3>
-    <div class="grid" id="resultsGrid"></div>
-  </div>
+  <header class="topbar"><div class="brand"><span class="logo">✳</span> ImplicitMABSA</div><div class="top-tag"><i class="dot"></i> Model ready · Local inference</div></header>
+  <main>
+    <section class="intro"><div><p class="eyebrow">Multimodal sentiment studio</p><h1>Read between<br>the modalities.</h1><p>See how text and imagery shape the feeling behind every aspect.</p></div><div class="model-pill">DeBERTa-v3&nbsp; + &nbsp;ViT&nbsp; + &nbsp;Fusion</div></section>
+    <div class="workspace">
+      <section class="panel form-panel"><div class="panel-heading"><span class="step">01</span><h2>Build your analysis</h2></div>
+        <form id="predictForm">
+          <div class="field"><label for="text">Post text</label><textarea id="text" name="text" placeholder="What did they say? Add the post or tweet text here…" required></textarea><p class="hint">Include the context around the aspect you want to understand.</p></div>
+          <div class="field"><label for="aspect">Aspect to analyze</label><div class="aspect-wrap"><input type="text" id="aspect" name="aspect" placeholder="e.g. battery, screen, service" required /><span>ASPECT</span></div></div>
+          <div class="field"><label for="image">Post image</label><div class="upload" id="dropZone"><div class="upload-copy"><div class="upload-icon">▧</div><div class="upload-title">Drop an image here or browse</div><div class="upload-sub">PNG, JPG or WEBP</div></div><img class="preview" id="preview" alt="Selected image preview"/><input type="file" id="image" name="image" accept="image/*" required /></div></div>
+          <div class="actions"><button type="submit" id="submitBtn" class="primary">✦ &nbsp; Analyze sentiment</button><button type="button" id="sampleBtn" class="sample">Try a sample ↗</button></div>
+          <p class="error" id="errorMsg" role="alert"></p>
+        </form>
+      </section>
+      <div class="right-col">
+        <section class="guide"><p class="eyebrow">Three perspectives</p><h2>One post. Three signals.</h2><p>Compare what each model stream picks up, then see how fusion combines them.</p><div class="stream-list"><div class="stream"><span class="stream-icon">⌕</span><div><strong>Text-only</strong><small>Language and aspect context</small></div></div><div class="stream"><span class="stream-icon">▧</span><div><strong>Image-only</strong><small>Visual sentiment cues</small></div></div><div class="stream"><span class="stream-icon">✳</span><div><strong>Multimodal fusion</strong><small>Text + image together</small></div></div></div></section>
+        <section id="output" class="panel results"><div class="results-head"><h2>Analysis results</h2><span class="device" id="deviceLabel"></span></div><div class="grid" id="resultsGrid"></div></section>
+      </div>
+    </div><footer>ImplicitMABSA · Aspect-based sentiment analysis</footer>
+  </main>
 
   <script>
     const form = document.getElementById("predictForm");
     const btn = document.getElementById("submitBtn");
     const outBox = document.getElementById("output");
     const grid = document.getElementById("resultsGrid");
+    const fileInput = document.getElementById("image");
+    const dropZone = document.getElementById("dropZone");
+    const errorMsg = document.getElementById("errorMsg");
+
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      document.getElementById("preview").src = URL.createObjectURL(file);
+      dropZone.classList.add("has-image");
+    });
+    ["dragenter", "dragover"].forEach(name => dropZone.addEventListener(name, e => { e.preventDefault(); dropZone.classList.add("drag"); }));
+    ["dragleave", "drop"].forEach(name => dropZone.addEventListener(name, e => { e.preventDefault(); dropZone.classList.remove("drag"); }));
+    dropZone.addEventListener("drop", e => { if (e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; fileInput.dispatchEvent(new Event("change")); } });
+    document.getElementById("sampleBtn").addEventListener("click", async () => {
+      document.getElementById("text").value = "Well, that happened after two hours of use. My phone was completely dead before dinner.";
+      document.getElementById("aspect").value = "battery";
+      try {
+        const res = await fetch("/sample-image");
+        if (!res.ok) throw new Error("Sample image unavailable");
+        const file = new File([await res.blob()], "sample.png", { type: "image/png" });
+        const transfer = new DataTransfer(); transfer.items.add(file); fileInput.files = transfer.files;
+        fileInput.dispatchEvent(new Event("change"));
+      } catch (err) { errorMsg.textContent = "Add an image to finish the sample."; errorMsg.style.display = "block"; }
+    });
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       btn.disabled = true;
-      btn.textContent = "Running DeBERTa + ViT Inference...";
+      btn.textContent = "Analyzing post…";
+      errorMsg.style.display = "none";
       grid.innerHTML = "";
 
       try {
@@ -223,30 +301,33 @@ def demo_ui() -> str:
           const item = data.results[key];
           if (!item) continue;
           const s = item.predicted_sentiment;
-          const aspHtml = item.aspect_relevance
-            ? `<div>Aspect Match: <b>${item.aspect_relevance.is_relevant ? "Yes" : "No"}</b> (${item.aspect_relevance.relevance_score}%)</div>`
-            : `<div>Aspect Match: <i>n/a (vision only)</i></div>`;
-
           grid.innerHTML += `
             <div class="stream-box">
-              <div style="font-weight:700; margin-bottom:10px;">${item.stream_name}</div>
-              <span class="badge ${s}">${s} (${item.confidence}%)</span>
-              <div class="meta">
-                ${aspHtml}
-                <div style="margin-top:6px;">
-                  Pos: ${item.probabilities.positive}% | Neu: ${item.probabilities.neutral}% | Neg: ${item.probabilities.negative}%
-                </div>
-              </div>
+              <div class="result-top"><span class="stream-name">${item.stream_name}</span><span class="badge ${s}">${s}</span></div>
+              <div class="bar-label"><span>Confidence</span><strong>${item.confidence}%</strong></div><div class="bar"><i style="width:${item.confidence}%"></i></div>
+              <div class="meta"><span>Positive ${item.probabilities.positive}% · Neutral ${item.probabilities.neutral}% · Negative ${item.probabilities.negative}%</span></div>
+              ${item.aspect_relevance ? `<div class="meta"><span>Aspect match</span><strong>${item.aspect_relevance.is_relevant ? "Yes" : "No"} · ${item.aspect_relevance.relevance_score}%</strong></div>` : ""}
             </div>`;
         }
+        document.getElementById("deviceLabel").textContent = data.device_used;
         outBox.style.display = "block";
+        outBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
       } catch (err) {
-        alert(err.message);
+        errorMsg.textContent = err.message;
+        errorMsg.style.display = "block";
       } finally {
         btn.disabled = false;
-        btn.textContent = "Analyze Multimodal Sentiment";
+        btn.textContent = "✦   Analyze sentiment";
       }
     });
   </script>
 </body>
 </html>"""
+
+
+@app.get("/sample-image")
+def sample_image() -> FileResponse:
+    image_path = Path(__file__).parent / "saved_models" / "demo_battery_negative.png"
+    if not image_path.is_file():
+        raise HTTPException(status_code=404, detail="Sample image not found")
+    return FileResponse(image_path, media_type="image/png")

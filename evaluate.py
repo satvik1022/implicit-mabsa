@@ -137,6 +137,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate ImplicitMABSA streams.")
     parser.add_argument("--checkpoint", default=DEFAULT_CHECKPOINT_PATH)
     parser.add_argument("--split", choices=["val", "test"], default="test")
+    parser.add_argument("--data_path", default=None, help="override checkpoint training CSV/JSON/JSONL")
+    parser.add_argument("--val_path", default=None, help="override checkpoint validation split")
+    parser.add_argument("--test_path", default=None, help="override checkpoint test split")
+    parser.add_argument("--image_root", default=None, help="override image root")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--device", default=None, help="e.g. cuda, cuda:1, cpu (default: auto)")
@@ -155,6 +159,10 @@ def main() -> None:
     ckpt = load_checkpoint(args.checkpoint)
     model_cfg = ModelConfig(**ckpt["model_config"])
     data_cfg = DataConfig(**ckpt["data_config"])
+    for key in ("data_path", "val_path", "test_path", "image_root"):
+        value = getattr(args, key)
+        if value is not None:
+            setattr(data_cfg, key, value)
 
     tokenizer = load_tokenizer(model_cfg.text_model_name)
     image_processor = load_image_processor(model_cfg.vision_model_name)

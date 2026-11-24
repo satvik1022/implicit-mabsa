@@ -59,6 +59,8 @@ class DataConfig:
     """Everything needed to rebuild identical splits (stored inside the checkpoint)."""
 
     data_path: Optional[str] = None
+    val_path: Optional[str] = None
+    test_path: Optional[str] = None
     image_root: Optional[str] = None
     num_synthetic: int = 1500
     ambiguous_prob: float = 0.3
@@ -498,17 +500,26 @@ def prepare_data(
     cfg: DataConfig, tokenizer: PreTrainedTokenizerBase, image_processor: ViTImageProcessor
 ) -> DataBundle:
     """Load (or synthesise) records, split them, and wrap each split in a dataset."""
-    if cfg.data_path:
+    explicit_splits = bool(cfg.val_path or cfg.test_path)
+    if explicit_splits and not (cfg.data_path and cfg.val_path and cfg.test_path):
+        raise ValueError("Explicit splits require data_path, val_path, and test_path.")
+
+    if explicit_splits:
+        train_r = load_records(cfg.data_path, cfg.image_root)
+        val_r = load_records(cfg.val_path, cfg.image_root)
+        test_r = load_records(cfg.test_path, cfg.image_root)
+        records = train_r
+    elif cfg.data_path:
         records = load_records(cfg.data_path, cfg.image_root)
+        train_r, val_r, test_r = split_records(records, cfg.val_ratio, cfg.test_ratio, cfg.seed)
     else:
         logger.info("No data_path given; generating %d synthetic samples.", cfg.num_synthetic)
         records = generate_synthetic_records(cfg.num_synthetic, cfg.seed, cfg.ambiguous_prob, cfg.image_noise_prob)
+        train_r, val_r, test_r = split_records(records, cfg.val_ratio, cfg.test_ratio, cfg.seed)
 
-    aspect_vocab = sorted({r.aspect for r in records})
+    aspect_vocab = sorted({r.aspect for r in train_r})
     if len(aspect_vocab) < 2:
         raise ValueError("At least two aspect categories are required to build negative candidates.")
-
-    train_r, val_r, test_r = split_records(records, cfg.val_ratio, cfg.test_ratio, cfg.seed)
 
     def make(recs: List[MABSASample], seed_offset: int) -> ImplicitMABSADataset:
         return ImplicitMABSADataset(

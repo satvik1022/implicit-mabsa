@@ -41,6 +41,7 @@ from utils import (
     DEFAULT_CHECKPOINT_PATH,
     autocast_context,
     get_device,
+    load_checkpoint,
     save_checkpoint,
     set_seed,
     setup_logging,
@@ -78,11 +79,15 @@ def train_one_stream(
     device: torch.device,
     sentiment_weights: torch.Tensor,
     aspect_weights: torch.Tensor,
+    initial_state: Optional[Dict[str, torch.Tensor]] = None,
 ) -> Tuple[Dict[str, torch.Tensor], List[Dict[str, Any]], float]:
     """Fine-tune one stream; returns (best stream state dict, per-epoch history, best val macro-F1)."""
     logger.info("=" * 70)
     logger.info("Training %s", STREAM_DISPLAY_NAMES[mode])
-    model = ImplicitMABSAModel(model_cfg, modes=(mode,)).to(device)
+    model = ImplicitMABSAModel(model_cfg, modes=(mode,), pretrained=initial_state is None).to(device)
+    if initial_state is not None:
+        model.load_stream_state_dict(mode, initial_state)
+        logger.info("Resumed %s weights from the existing checkpoint.", mode)
     logger.info("Trainable parameters: %.1fM", model.num_trainable_parameters() / 1e6)
 
     train_loader = make_dataloader(bundle.train, mode, args.batch_size, shuffle=True, num_workers=args.num_workers)
@@ -150,6 +155,8 @@ def parse_args() -> argparse.Namespace:
     # data
     p.add_argument("--data_path", default=None, help="CSV/JSON/JSONL with text,image_path,aspect,sentiment "
                                                      "(omit to use synthetic data)")
+    p.add_argument("--val_path", default=None, help="optional validation CSV/JSON/JSONL for an explicit split")
+    p.add_argument("--test_path", default=None, help="optional test CSV/JSON/JSONL for an explicit split")
     p.add_argument("--image_root", default=None, help="prefix for relative image paths")
     p.add_argument("--num_synthetic", type=int, default=1500)
     p.add_argument("--ambiguous_prob", type=float, default=0.3)
@@ -183,7 +190,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--num_workers", type=int, default=0)
     p.add_argument("--device", default=None, help="e.g. cuda, cuda:1, cpu (default: auto)")
-    p.add_argument("--output_path", default=DEFAULT_CHECKPOINT_PATH)
+    p.add_argument("--resume_checkpoint", default=None, help="continue fine-tuning from a saved checkpoint")
+    p.add_argument("--output_path", default=None, help="checkpoint output (defaults to a new fine-tuned file when resuming)")
     return p.parse_args()
 
 
@@ -194,7 +202,8 @@ def main() -> None:
     device = get_device(args.device)
     logger.info("Device: %s", device)
 
-    model_cfg = ModelConfig(
+    resume = load_checkpoint(args.resume_checkpoint) if args.resume_checkpoint else None
+    model_cfg = ModelConfig(**resume["model_config"]) if resume else ModelConfig(
         text_model_name=args.text_model,
         vision_model_name=args.vision_model,
         num_sentiments=len(SENTIMENT_LABELS),
@@ -206,6 +215,8 @@ def main() -> None:
     )
     data_cfg = DataConfig(
         data_path=args.data_path,
+        val_path=args.val_path,
+        test_path=args.test_path,
         image_root=args.image_root,
         num_synthetic=args.num_synthetic,
         ambiguous_prob=args.ambiguous_prob,
@@ -228,12 +239,15 @@ def main() -> None:
     logger.info("Polarity class weights %s: %s", SENTIMENT_LABELS, [round(w, 3) for w in sentiment_weights.tolist()])
     logger.info("Aspect-relevance class weights [non-target, target]: %s", [round(w, 3) for w in aspect_weights.tolist()])
 
-    streams: Dict[str, Dict[str, torch.Tensor]] = {}
-    histories: Dict[str, List[Dict[str, Any]]] = {}
-    best_scores: Dict[str, float] = {}
+    streams: Dict[str, Dict[str, torch.Tensor]] = dict(resume["streams"]) if resume else {}
+    histories: Dict[str, List[Dict[str, Any]]] = dict(resume.get("history", {})) if resume else {}
+    best_scores: Dict[str, float] = dict(resume.get("best_val_macro_f1", {})) if resume else {}
     for mode in args.streams:
+        if resume and mode not in resume["streams"]:
+            raise ValueError(f"Checkpoint has no saved weights for stream {mode!r}.")
         state, history, best_f1 = train_one_stream(
-            mode, model_cfg, bundle, args, device, sentiment_weights, aspect_weights
+            mode, model_cfg, bundle, args, device, sentiment_weights, aspect_weights,
+            initial_state=resume["streams"][mode] if resume else None,
         )
         streams[mode], histories[mode], best_scores[mode] = state, history, best_f1
 
@@ -251,7 +265,10 @@ def main() -> None:
         "history": histories,
         "streams": streams,
     }
-    path = save_checkpoint(payload, args.output_path)
+    output_path = args.output_path or (
+        "./saved_models/implicit_mabsa_finetuned.pt" if resume else DEFAULT_CHECKPOINT_PATH
+    )
+    path = save_checkpoint(payload, output_path)
     logger.info("Saved checkpoint to %s", path)
     for mode, score in best_scores.items():
         logger.info("  %-22s best val macro-F1 = %.4f", STREAM_DISPLAY_NAMES[mode], score)

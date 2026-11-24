@@ -2,5 +2,10 @@ venv/
 __pycache__/
 *.pyc
 saved_models/*.pt
+saved_models/**/*.pt
+saved_models/.cache/
 datasets/
+.dataset2015_fetch/
+.dataset_source/
+.dataset_train.tsv
 server.log

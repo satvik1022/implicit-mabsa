@@ -1,0 +1,38 @@
+{
+  "text_only": {
+    "sentiment_accuracy": 0.8572806171648988,
+    "sentiment_precision": 0.8439620818075366,
+    "sentiment_recall": 0.8263874768988724,
+    "sentiment_f1": 0.8345892764093245,
+    "aspect_accuracy": 0.9942140790742526,
+    "aspect_precision": 0.994260040975793,
+    "aspect_recall": 0.9942140790742526,
+    "aspect_f1": 0.9942139445609963,
+    "num_sentiment_samples": 1037.0,
+    "num_pairs": 2074.0
+  },
+  "image_only": {
+    "sentiment_accuracy": 0.7550626808100289,
+    "sentiment_precision": 0.7287660390124957,
+    "sentiment_recall": 0.7306641889125901,
+    "sentiment_f1": 0.7297093124623434,
+    "aspect_accuracy": null,
+    "aspect_precision": null,
+    "aspect_recall": null,
+    "aspect_f1": null,
+    "num_sentiment_samples": 1037.0,
+    "num_pairs": 1037.0
+  },
+  "multimodal": {
+    "sentiment_accuracy": 0.9074252651880425,
+    "sentiment_precision": 0.8885088834477362,
+    "sentiment_recall": 0.8907849222415788,
+    "sentiment_f1": 0.8895443692230819,
+    "aspect_accuracy": 0.9932497589199615,
+    "aspect_precision": 0.993315817619568,
+    "aspect_recall": 0.9932497589199614,
+    "aspect_f1": 0.9932495329353791,
+    "num_sentiment_samples": 1037.0,
+    "num_pairs": 2074.0
+  }
+}
